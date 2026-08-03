@@ -1,0 +1,82 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# Turbo cache
+.turbo/
+
+# fumadocs auto-generated
+.source/
+
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local operational notes and captures
+MEMORY.md
+**/MEMORY.md
+# docs/MEMORY.md 是所有贡献者 Agent 的共享长期记忆，需纳入版本管理（豁免上面的忽略规则）
+!docs/MEMORY.md
+*.har
+rollout-*.jsonl
+.gpt2image/
+**/.gpt2image/
+# Claude Code 子 Agent 隔离 worktree（临时，自动管理；偶有 node_modules 残留）
+.claude/worktrees/
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env*.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+#ide
+.vscode
+.omc
+
+# Windows
+nul
+
+# local storage (dev-mode image files)
+/storage/
+
+# local registration tool runtime config
+注册机/config.yaml
+# at.txt 含真实 access token（机密），永不提交
+注册机/at.txt
+
+# deploy artifacts
+deploy.tgz
+
+# 水墨引擎审阅样张(本地生成,不入库)
+apps/web/scripts/preview/
+.playwright-cli/

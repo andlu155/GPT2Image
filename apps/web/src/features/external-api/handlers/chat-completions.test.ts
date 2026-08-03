@@ -1,0 +1,333 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  authenticateExternalApiRequest: vi.fn(),
+  canUsePlanCapability: vi.fn(),
+  getPlanLimits: vi.fn(),
+  getUserPlan: vi.fn(),
+  runBatchImageGeneration: vi.fn(),
+  runImageGenerationForUser: vi.fn(),
+  uploadTemporaryImageUrls: vi.fn(),
+}));
+
+vi.mock("@/features/external-api/auth", () => ({
+  authenticateExternalApiRequest: mocks.authenticateExternalApiRequest,
+}));
+
+vi.mock("@repo/shared/subscription/services/plan-capabilities", () => ({
+  MAX_PLAN_BATCH_COUNT: 10_000,
+  canUsePlanCapability: mocks.canUsePlanCapability,
+  getPlanLimits: mocks.getPlanLimits,
+}));
+
+vi.mock("@repo/shared/subscription/services/user-plan", () => ({
+  getUserPlan: mocks.getUserPlan,
+}));
+
+vi.mock("@/features/image-generation/operations", () => ({
+  runImageGenerationForUser: mocks.runImageGenerationForUser,
+}));
+
+vi.mock("@/features/image-generation/batch-runner", () => ({
+  runBatchImageGeneration: mocks.runBatchImageGeneration,
+}));
+
+vi.mock("@/features/image-generation/request-utils", () => ({
+  uploadTemporaryImageUrls: mocks.uploadTemporaryImageUrls,
+}));
+
+type BatchRunMockParams = {
+  count: number;
+  generationIds?: string[];
+  run: (generationId: string, callbacks?: unknown) => Promise<unknown>;
+  callbacks?: (index: number) => unknown;
+  onResult?: (result: unknown, index: number) => Promise<void> | void;
+};
+
+function chatCompletionsRequest(body: Record<string, unknown>) {
+  return new Request("https://example.test/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer test-key",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("external chat completions handler streaming bridge", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authenticateExternalApiRequest.mockResolvedValue({
+      userId: "user_1",
+      apiKeyId: "key_1",
+      moderationBlockRiskLevel: undefined,
+    });
+    mocks.getUserPlan.mockResolvedValue({ plan: "ultra" });
+    mocks.canUsePlanCapability.mockResolvedValue(true);
+    mocks.getPlanLimits.mockResolvedValue({
+      maxBatchCount: 10,
+      imageGenerationConcurrency: 2,
+      maxChatContextChars: 10000,
+      maxChatImages: 16,
+      maxFileMb: 20,
+      maxUploadMb: 100,
+    });
+    mocks.runImageGenerationForUser.mockResolvedValue({
+      responseText: "hello",
+      model: "gpt-5.4",
+      generationId: "gen_1",
+      creditsConsumed: 1,
+    });
+    mocks.runBatchImageGeneration.mockImplementation(
+      async ({
+        count,
+        generationIds,
+        run,
+        callbacks,
+        onResult,
+      }: BatchRunMockParams) => {
+        const results = [];
+        for (let index = 0; index < count; index += 1) {
+          const result = await run(
+            generationIds?.[index] || `gen_${index + 1}`,
+            callbacks?.(index)
+          );
+          results.push(result);
+          await onResult?.(result, index);
+        }
+        return results;
+      }
+    );
+    mocks.uploadTemporaryImageUrls.mockResolvedValue(undefined);
+  });
+
+  it("does not force upstream streaming for downstream non-stream callers", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-5.4",
+        messages: [{ role: "user", content: "hello" }],
+      }) as never
+    );
+    const payload = await response.json();
+
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(payload.object).toBe("chat.completion");
+    const call = mocks.runImageGenerationForUser.mock.calls[0];
+    if (!call) throw new Error("expected image generation to be called");
+    const [input, callbacks] = call;
+    expect(input).toEqual(
+      expect.objectContaining({
+        stream: undefined,
+        rawChatCompletionsBody: expect.objectContaining({
+          messages: [{ role: "user", content: "hello" }],
+        }),
+        backendRequestKind: "chat",
+      })
+    );
+    expect(callbacks).toBeUndefined();
+  });
+
+  it("includes a Markdown image URL in b64_json Chat responses", async () => {
+    mocks.runImageGenerationForUser.mockResolvedValueOnce({
+      imageUrl: "https://cdn.example.test/generated.png",
+      imageBase64: Buffer.from("generated-image").toString("base64"),
+      model: "gpt-image-2",
+      generationId: "gen_image",
+      creditsConsumed: 2,
+    });
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        messages: [{ role: "user", content: "draw a poster" }],
+        response_format: "b64_json",
+      }) as never
+    );
+    const payload = await response.json();
+
+    expect(payload.choices[0].message.content).toContain(
+      "![generated image 1](https://cdn.example.test/generated.png)"
+    );
+    expect(payload.choices[0].message.images[0]).toEqual(
+      expect.objectContaining({
+        url: "https://cdn.example.test/generated.png",
+        b64_json: Buffer.from("generated-image").toString("base64"),
+      })
+    );
+  });
+
+  it("streams a Markdown image URL for b64_json Chat responses", async () => {
+    mocks.runImageGenerationForUser.mockResolvedValueOnce({
+      imageUrl: "https://cdn.example.test/streamed.png",
+      imageBase64: Buffer.from("streamed-image").toString("base64"),
+      model: "gpt-image-2",
+      generationId: "gen_streamed",
+      creditsConsumed: 2,
+    });
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        stream: true,
+        messages: [{ role: "user", content: "draw a poster" }],
+        response_format: "b64_json",
+      }) as never
+    );
+    const body = await response.text();
+
+    expect(body).toContain(
+      "![generated image 1](https://cdn.example.test/streamed.png)"
+    );
+    expect(body).toContain('"b64_json":"c3RyZWFtZWQtaW1hZ2U="');
+  });
+
+  it("routes a single-turn top-level gpt-image model to image generation", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        messages: [{ role: "user", content: "draw a poster" }],
+      }) as never
+    );
+    await response.json();
+
+    const call = mocks.runImageGenerationForUser.mock.calls[0];
+    if (!call) throw new Error("expected image generation to be called");
+    const [input] = call;
+    expect(input).toEqual(
+      expect.objectContaining({
+        mode: "generate",
+        backendRequestKind: "image_generation",
+        model: "gpt-image-2",
+      })
+    );
+    expect(input).not.toHaveProperty("rawChatCompletionsBody");
+  });
+
+  it("keeps multi-turn top-level image requests on the chat path", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        messages: [
+          { role: "user", content: "draw a poster" },
+          { role: "assistant", content: "Which color palette?" },
+          { role: "user", content: "Use red and white" },
+        ],
+      }) as never
+    );
+    await response.json();
+
+    const call = mocks.runImageGenerationForUser.mock.calls[0];
+    if (!call) throw new Error("expected image generation to be called");
+    const [input] = call;
+    expect(input).toEqual(
+      expect.objectContaining({
+        mode: "chat",
+        backendRequestKind: "chat",
+        model: undefined,
+        imageModel: "gpt-image-2",
+        rawChatCompletionsBody: expect.objectContaining({ model: undefined }),
+      })
+    );
+  });
+
+  it("keeps explicitly required Responses requests on the chat path", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        messages: [{ role: "user", content: "draw a poster" }],
+        requires_responses_backend: true,
+      }) as never
+    );
+    await response.json();
+
+    const call = mocks.runImageGenerationForUser.mock.calls[0];
+    if (!call) throw new Error("expected image generation to be called");
+    const [input] = call;
+    expect(input).toEqual(
+      expect.objectContaining({
+        mode: "chat",
+        backendRequestKind: "chat",
+        requiresResponsesBackend: true,
+      })
+    );
+  });
+
+  it("passes prompt_repair=false through as moderationPromptRepair", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        messages: [{ role: "user", content: "draw a poster" }],
+        prompt_repair: false,
+      }) as never
+    );
+    await response.json();
+
+    const call = mocks.runImageGenerationForUser.mock.calls[0];
+    if (!call) throw new Error("expected image generation to be called");
+    const [input] = call;
+    expect(input).toEqual(
+      expect.objectContaining({ moderationPromptRepair: false })
+    );
+  });
+
+  it("leaves moderationPromptRepair undefined when prompt_repair is omitted", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-image-2",
+        messages: [{ role: "user", content: "draw a poster" }],
+      }) as never
+    );
+    await response.json();
+
+    const call = mocks.runImageGenerationForUser.mock.calls[0];
+    if (!call) throw new Error("expected image generation to be called");
+    const [input] = call;
+    expect(input.moderationPromptRepair).toBeUndefined();
+  });
+
+  it("does not force upstream streaming for downstream stream callers", async () => {
+    const { postExternalChatCompletions } = await import("./chat-completions");
+
+    const response = await postExternalChatCompletions(
+      chatCompletionsRequest({
+        model: "gpt-5.4",
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      }) as never
+    );
+    await response.text();
+
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(mocks.runBatchImageGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callbacks: expect.any(Function),
+      })
+    );
+    expect(mocks.runImageGenerationForUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: undefined,
+        rawChatCompletionsBody: expect.objectContaining({ stream: true }),
+        backendRequestKind: "chat",
+      }),
+      expect.objectContaining({
+        onPartialImage: expect.any(Function),
+        onTextDelta: expect.any(Function),
+      })
+    );
+  });
+});

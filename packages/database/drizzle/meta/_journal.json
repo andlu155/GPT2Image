@@ -1,0 +1,335 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1769352942383,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775563974164,
+      "tag": "0001_creem_schema_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777600000000,
+      "tag": "0002_user_api_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778652000000,
+      "tag": "0003_user_api_stream",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778716800000,
+      "tag": "0004_registration_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778788800000,
+      "tag": "0005_external_api_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778860800000,
+      "tag": "0006_expire_existing_credits",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778864400000,
+      "tag": "0007_decimal_credits",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778868000000,
+      "tag": "0008_system_settings_and_chat_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778889600000,
+      "tag": "0009_free_credits_expiry_and_upgrade_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778893200000,
+      "tag": "0010_fix_free_bonus_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778947200000,
+      "tag": "0011_admin_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779127200000,
+      "tag": "0012_epay_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779177600000,
+      "tag": "0013_moderation_risk_levels",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779179000000,
+      "tag": "0014_image_backend_pool",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1779179400000,
+      "tag": "0015_image_backend_scheduler",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1779179800000,
+      "tag": "0016_image_backend_account_dual_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779379200000,
+      "tag": "0017_ticket_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779696000000,
+      "tag": "0018_admin_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1779696060000,
+      "tag": "0019_promote_legacy_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1779711733866,
+      "tag": "0020_ticket_admin_unread",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1779713400000,
+      "tag": "0021_external_api_key_quota",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1779724800000,
+      "tag": "0022_announcements",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1779727200000,
+      "tag": "0023_image_backend_account_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779770000000,
+      "tag": "0024_chat_completions_upstream_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0025_credits_batch_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1780400000000,
+      "tag": "0026_external_api_key_relay",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1780400060000,
+      "tag": "0027_credits_transaction_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1780400120000,
+      "tag": "0028_image_backend_api_image_upstream_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1780400180000,
+      "tag": "0029_credits_transaction_idempotency_userid",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1780400240000,
+      "tag": "0030_mcp_user_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1780400300000,
+      "tag": "0031_image_backend_inflight_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1780400360000,
+      "tag": "0032_image_backend_api_always_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1780400420000,
+      "tag": "0033_image_backend_api_concurrency",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1780400480000,
+      "tag": "0034_image_backend_api_failure_cooldown",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1780400540000,
+      "tag": "0035_generation_read_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1780400600000,
+      "tag": "0036_credits_transaction_user_created_at_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780400660000,
+      "tag": "0037_image_backend_account_always_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1780400661000,
+      "tag": "0038_image_backend_api_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1780400720000,
+      "tag": "0039_add_subscription_user_id_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1780400780000,
+      "tag": "0040_image_backend_adobe",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780400840000,
+      "tag": "0041_adobe_account_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1780400900000,
+      "tag": "0042_video_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1780400960000,
+      "tag": "0043_adobe_gpt_image_quality",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1780400961000,
+      "tag": "0044_adobe_billing_multiplier",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1780400962000,
+      "tag": "0045_api_adobe_sourced",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784886000000,
+      "tag": "0046_ticket_attachments",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": ["NEXT_PUBLIC_ASSET_PREFIX"],
+      "passThroughEnv": [
+        "NEXT_TELEMETRY_DISABLED",
+        "DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_URL",
+        "NEXT_PUBLIC_APP_URL",
+        "NEXT_PUBLIC_APP_NAME",
+        "PAYMENT_PROVIDER",
+        "NEXT_PUBLIC_PAYMENT_PROVIDER",
+        "CREEM_API_KEY",
+        "CREEM_WEBHOOK_SECRET",
+        "NEXT_PUBLIC_CREEM_PRICE_STARTER_MONTHLY",
+        "NEXT_PUBLIC_CREEM_PRICE_STARTER_YEARLY",
+        "NEXT_PUBLIC_CREEM_PRICE_PRO_MONTHLY",
+        "NEXT_PUBLIC_CREEM_PRICE_PRO_YEARLY",
+        "NEXT_PUBLIC_CREEM_PRICE_ULTRA_MONTHLY",
+        "NEXT_PUBLIC_CREEM_PRICE_ULTRA_YEARLY",
+        "NEXT_PUBLIC_CREEM_PRICE_ENTERPRISE_MONTHLY",
+        "NEXT_PUBLIC_CREEM_PRICE_ENTERPRISE_YEARLY",
+        "EPAY_API_URL",
+        "EPAY_PID",
+        "EPAY_KEY",
+        "EPAY_DEFAULT_PAYMENT_TYPE",
+        "NEXT_PUBLIC_EPAY_DEFAULT_PAYMENT_TYPE",
+        "EMAIL_PROVIDER",
+        "EMAIL_FROM",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_SECURE",
+        "SMTP_USER",
+        "SMTP_PASS",
+        "RESEND_API_KEY",
+        "REGISTRATION_EMAIL_ALLOWED_DOMAINS",
+        "REGISTRATION_EMAIL_BLOCK_PLUS_ALIASES",
+        "REGISTRATION_EMAIL_BLOCK_DOTTED_LOCAL_PARTS",
+        "CONTENT_MODERATION_ENABLED",
+        "CONTENT_MODERATION_PROVIDER",
+        "CONTENT_MODERATION_FAIL_CLOSED",
+        "ALIYUN_MODERATION_ACCESS_KEY_ID",
+        "ALIYUN_MODERATION_ACCESS_KEY_SECRET",
+        "ALIYUN_MODERATION_REGION_ID",
+        "ALIYUN_MODERATION_ENDPOINT",
+        "ALIYUN_MODERATION_TEXT_REGION_ID",
+        "ALIYUN_MODERATION_TEXT_ENDPOINT",
+        "ALIYUN_MODERATION_TEXT_SERVICE",
+        "ALIYUN_MODERATION_IMAGE_REGION_ID",
+        "ALIYUN_MODERATION_IMAGE_ENDPOINT",
+        "ALIYUN_MODERATION_IMAGE_SERVICE",
+        "ALIYUN_MODERATION_APP_ID",
+        "ALIYUN_MODERATION_TEXT_APP_ID",
+        "ALIYUN_MODERATION_IMAGE_APP_ID",
+        "CONTENT_MODERATION_PUBLIC_BASE_URL",
+        "OPENAI_MODERATION_API_KEY",
+        "OPENAI_MODERATION_MODEL",
+        "NEXT_PUBLIC_SENTRY_DSN",
+        "CRON_SECRET",
+        "NEXT_PUBLIC_GENERATIONS_BUCKET_NAME",
+        "NEXT_PUBLIC_AVATARS_BUCKET_NAME",
+        "NEXT_PUBLIC_GA_ID"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {}
+  }
+}

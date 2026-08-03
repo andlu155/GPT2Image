@@ -1,0 +1,254 @@
+"use client";
+
+import {
+  resendVerificationEmail,
+  signInWithEmail,
+  signInWithGoogle,
+} from "@repo/shared/auth/client";
+import { GoogleIcon } from "@repo/shared/components/icons";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
+import { Separator } from "@repo/ui/components/separator";
+import { Eye, EyeOff } from "lucide-react";
+import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
+import { useState } from "react";
+import { toast } from "sonner";
+
+import { AuthErrorAlert } from "./auth-error-alert";
+import { AuthLogo } from "./auth-logo";
+
+/**
+ * 登录表单组件
+ *
+ * 功能:
+ * - Google OAuth 登录
+ * - 邮箱密码登录
+ */
+interface SignInFormProps {
+  googleAuthEnabled?: boolean;
+}
+
+export function SignInForm({ googleAuthEnabled = false }: SignInFormProps) {
+  const locale = useLocale();
+  const t = useTranslations("Auth.signIn");
+  const tCommon = useTranslations("Auth.common");
+
+  // 表单状态
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showResend, setShowResend] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  /**
+   * 重新发送验证邮件
+   */
+  const handleResendEmail = async () => {
+    if (resendCooldown > 0 || !email) return;
+
+    try {
+      await resendVerificationEmail(email);
+      setResendCooldown(60);
+      const timer = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch {
+      // 静默失败
+    }
+  };
+
+  /**
+   * 处理 Google 登录
+   */
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      await signInWithGoogle();
+    } catch {
+      setError(t("errors.google"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * 处理邮箱密码登录
+   */
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!email || !password) {
+      setError(t("errors.missingFields"));
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      const result = await signInWithEmail(email, password);
+
+      if (result.error) {
+        if (result.error.code === "EMAIL_NOT_VERIFIED") {
+          setError(t("errors.emailNotVerified"));
+          setShowResend(true);
+        } else {
+          setError(t("errors.invalidCredentials"));
+          setShowResend(false);
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // 登录成功，提示并跳转
+      toast.success(t("success"));
+      window.location.href = `/${locale}/dashboard`;
+    } catch {
+      setError(t("errors.invalidCredentials"));
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-6">
+      {/* Logo 和标题:品牌区与标题间留白拉开,标题与副行收紧,形成排版节奏 */}
+      <div className="flex flex-col items-center text-center">
+        <AuthLogo />
+        <h1 className="mt-5 font-serif text-2xl font-medium tracking-tight">
+          {t("title")}
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {t("subtitle")}
+        </p>
+      </div>
+
+      {/* 错误提示 */}
+      <AuthErrorAlert message={error} />
+
+      {/* 重发验证邮件:与主按钮同高,保持全宽控件节奏一致 */}
+      {showResend && (
+        <Button
+          variant="outline"
+          className="h-11 w-full"
+          onClick={handleResendEmail}
+          disabled={resendCooldown > 0}
+        >
+          {resendCooldown > 0
+            ? t("resendCooldown", { seconds: resendCooldown })
+            : t("resendVerification")}
+        </Button>
+      )}
+
+      {googleAuthEnabled ? (
+        <>
+          {/* OAuth 登录按钮 */}
+          <div className="space-y-3">
+            <Button
+              variant="outline"
+              className="h-11 w-full"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+            >
+              <GoogleIcon className="mr-2 h-4 w-4" />
+              {tCommon("google")}
+            </Button>
+          </div>
+
+          {/* 分隔线:小标签规格,遮字背景与卡片一致 */}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <Separator className="w-full" />
+            </div>
+            <div className="relative flex justify-center text-[11px] uppercase tracking-widest">
+              {/* 遮线背景取卡片色:表单位于 bg-card 容器内 */}
+              <span className="bg-card px-3 text-muted-foreground">
+                {tCommon("or")}
+              </span>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {/* 邮箱密码表单:输入组间距统一 space-y-5 */}
+      <form onSubmit={handleEmailSignIn} className="space-y-5">
+        {/* 邮箱输入 */}
+        <div className="space-y-2">
+          <Label htmlFor="email">{t("emailLabel")}</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder={t("emailPlaceholder")}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={isLoading}
+            autoComplete="email"
+          />
+        </div>
+
+        {/* 密码输入 */}
+        <div className="space-y-2">
+          <Label htmlFor="password">{t("passwordLabel")}</Label>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+              autoComplete="current-password"
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors duration-150"
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* 忘记密码链接 */}
+        <div className="text-left">
+          <Link
+            href="/forgot-password"
+            className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors duration-150"
+          >
+            {t("forgotPassword")}
+          </Link>
+        </div>
+
+        {/* 提交按钮:主按钮加高至 h-11 */}
+        <Button type="submit" className="h-11 w-full" disabled={isLoading}>
+          {isLoading ? t("loading") : t("submit")}
+        </Button>
+      </form>
+
+      {/* 注册链接:常驻淡下划线,hover 过渡为前景色下划线 */}
+      <p className="text-center text-sm text-muted-foreground">
+        {t("noAccount")}{" "}
+        <Link
+          href={`/${locale}/sign-up`}
+          className="font-medium text-foreground underline decoration-border underline-offset-4 transition-colors duration-150 hover:decoration-foreground"
+        >
+          {t("signUpLink")}
+        </Link>
+      </p>
+    </div>
+  );
+}

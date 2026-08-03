@@ -1,0 +1,27 @@
+{
+  "name": "gpt2image-pro",
+  "version": "0.8.1",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "dev:web": "turbo dev --filter=@repo/web",
+    "build:web": "turbo build --filter=@repo/web",
+    "db:generate": "turbo db:generate --filter=@repo/database",
+    "db:push": "turbo db:push --filter=@repo/database",
+    "db:studio": "turbo db:studio --filter=@repo/database"
+  },
+  "devDependencies": {
+    "turbo": "^2.9.18"
+  },
+  "packageManager": "pnpm@10.27.0",
+  "pnpm": {
+    "overrides": {
+      "kysely": "0.28.17"
+    }
+  },
+  "license": "AGPL-3.0-only"
+}

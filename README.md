@@ -343,9 +343,9 @@ Web 应用默认启用内置定时任务，会自动执行 pending 超时退款�
 
 仓库发布地址为 `MeowFree/GPT2Image-Pro`。打版本 tag 会触发 GitHub Actions：
 
-- 构建并推送 `ghcr.io/meowfree/gpt2image-pro-web`
-- 构建并推送 `ghcr.io/meowfree/gpt2image-pro-migrate`
-- 构建并推送 `ghcr.io/meowfree/gpt2image-pro-chatgpt-web-proxy`
+- 构建并推送 `ghcr.io/andlu155/gpt2image-pro-web`
+- 构建并推送 `ghcr.io/andlu155/gpt2image-pro-migrate`
+- 构建并推送 `ghcr.io/andlu155/gpt2image-pro-chatgpt-web-proxy`
 - 创建 GitHub Release 草稿，并附带 compose 部署包
 
 ```bash

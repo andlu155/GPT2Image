@@ -4,6 +4,10 @@
 
 ## 未发布
 
+### 修复
+
+- **codex 生图 403 修复**:2026-08 实测 `/backend-api/codex/images/generations` 与 `/images/edits` 对 codex OAuth 凭据一律返回 403 `{"detail":"Forbidden"}`（OpenAI 应用层拒绝，非网络/风控），codex 账号的普通生成与图生图从直连 images 端点改走已实测畅通的 `/responses` 的 image_generation 工具（与 chat/agent/瀑布流同一通道）。直连端点仅保留给 pool-api 等非 codex 后端；不再存在"codex 去 width/height/response_format"分支。注意 size 仍不被 codex 图像工具尊重，尺寸由自动超分校准补足。
+
 ### 性能
 
 - **Real-ESRGAN 独立 Worker**:超分 ONNX 推理从 Next.js 页面/API 进程迁移到独立 HTTP Worker，两个 Web 实例共享单并发队列；32 核生产节点默认允许 ONNX 使用 24 线程，配合 `CPUQuota=2400%` 与低调度优先级保留页面响应能力。Worker 失败仍回退原图，不阻断出图。

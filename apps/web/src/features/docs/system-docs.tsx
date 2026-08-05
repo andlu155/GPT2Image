@@ -129,7 +129,7 @@ const sections = {
         {
           title: "Codex/Responses 账号池",
           description:
-            "chat / agent / responses 走 Responses 语义（image_generation 工具循环、多轮）。普通图像生成与图生图改走该账号的 /images/generations、/images/edits 直连端点（同一 OAuth 凭据，JSON 体、size 走顶层；图生图的输入图/mask 以 base64 data URL 放在 images[].image_url / mask.image_url），以确定性遵循 size 等尺寸参数；Codex 托管的 image_generation 工具不尊重 size，故纯生成/编辑不再用它（codex images 端点要 JSON,不接受 multipart）。即便上游返回尺寸偏小，最终图也会经自动超分校准补足到目标分辨率（见下「分辨率超分与高清修复」），故 Web/Codex 出图同样支持接近 4K 的目标尺寸。",
+            "chat / agent / responses 与普通图像生成、图生图统一走 Responses 语义（image_generation 工具循环、多轮；2026-08 实测该账号 /images/generations、/images/edits 直连端点对 codex OAuth 凭据返回 403 Forbidden，已废弃直连路径，全部经 /responses）。注意 Codex 托管的 image_generation 工具不尊重 size，普通生成/编辑不再走直连端点以求确定尺寸；即便上游返回尺寸偏小，最终图也会经自动超分校准补足到目标分辨率（见下「分辨率超分与高清修复」），故 Web/Codex 出图同样支持接近 4K 的目标尺寸。",
         },
         {
           title: "Adobe（Firefly）账号池",
@@ -2541,7 +2541,7 @@ data: {"type":"response.completed","response":{"id":"resp_...","object":"respons
         {
           title: "Codex/Responses Pool",
           description:
-            "chat / agent / responses use Responses semantics (image_generation tool loop, multi-round). Plain image generation and image edits instead route to that account's direct /images/generations and /images/edits endpoints (same OAuth credential, JSON body, size at the top level; image-to-image input/mask passed as base64 data URLs in images[].image_url / mask.image_url) to deterministically honor size — the Codex-hosted image_generation tool ignores size, so plain generation/edit no longer uses it (the codex images endpoints take JSON, not multipart). Even when the upstream returns a smaller image, the final image is auto-upscaled to the target resolution (see 'Super-Resolution And HD Repair' below), so Web/Codex output likewise supports near-4K target sizes.",
+            "chat / agent / responses, plus plain image generation and image edits, all go through Responses semantics (image_generation tool loop, multi-round). As of 2026-08 the account's direct /images/generations and /images/edits endpoints return 403 Forbidden for codex OAuth credentials, so that direct path is deprecated and everything routes via /responses. Note the Codex-hosted image_generation tool ignores size, so plain generation/edit no longer uses the direct endpoint to force an exact size; even when the upstream returns a smaller image, the final image is auto-upscaled to the target resolution (see 'Super-Resolution And HD Repair' below), so Web/Codex output likewise supports near-4K target sizes.",
         },
         {
           title: "Adobe (Firefly) Pool",

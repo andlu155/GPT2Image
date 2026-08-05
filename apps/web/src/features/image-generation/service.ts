@@ -775,25 +775,14 @@ function isResponsesBackend(config: ApiConfig) {
   return isPoolApiResponsesBackend(config);
 }
 
-// codex(pool-account "responses")后端的普通生成/图生图走直连 images 端点
-// (generateImage → JSON /images/generations;editImage → JSON /images/edits,照 CPA
-// codex 直连格式:images[].image_url 的 base64 data URL + size 顶层),而非 /responses
-// 的 image_generation 工具。
-// WHY 仍走直连端点:codex 托管 image_generation 工具的工具循环/多轮语义对单张生图是多余
-// 开销,直连端点用【同一账号、同一 OAuth 凭据、同一 baseUrl】只改 path/body,请求更简单、
-// 标准字段对齐 gpt-image。codex images 端点用 JSON(不接受 multipart→400 Unsupported
-// content type),也不认非标准 width/height 与 response_format,故两条直连路径都按 CPA
-// 格式只发标准字段。
-// 注意 size 仍不可靠:codex 托管图像工具不尊重 size(openai/codex #19175),而 CLIProxyAPI
-// 的 direct image API 只是把请求转成同一个工具,所以【直连 images 端点照样忽略顶层 size】——
-// 我方虽确发了 size,codex 仍按提示词内容自挑长宽比。生产实测:本组 1024x1024 请求约 40%
-// 返回非方正、70%+ 返回任意非 1024 尺寸(2026-06 审计)。要精确尺寸须避开 codex 组改用真
-// gpt-image 后端,或出图后服务端裁剪兜底;别再以为换到直连端点 size 就被尊重。
-// chat/agent/瀑布流依赖工具循环与多轮,仍走 /responses。仅作用于 codex 账号
-// (pool-account responses);pool-api 的 responses 后端不受影响。
-function shouldCodexUseDirectImagesEndpoint(config: ApiConfig) {
-  return isPoolAccountBackend(config, "responses");
-}
+// codex(pool-account "responses")后端的单张生图/图生图统一走 /responses 的
+// image_generation 工具(与 chat/agent/瀑布流同一通道),不再走直连 images 端点。
+// WHY 改走 /responses:2026-08 实测 /backend-api/codex/images/generations 与
+// /images/edits 对 codex OAuth token 一律返回 403 {"detail":"Forbidden"}(OpenAI 应用层
+// 拒绝,非网络/风控——同 token 的 /responses 与 /backend-api/me 均畅通),直连路径对
+// codex 账号已不可用。直连 images 端点仅保留给 pool-api 等非 codex 后端使用。
+// 注意 size 仍不可靠:codex 图像工具不尊重 size(openai/codex #19175),按提示词自挑
+// 长宽比。要精确尺寸须避开 codex 组改用真 gpt-image 后端,或出图后服务端裁剪兜底。
 
 function isResponsesImageToolChoiceMismatch(error?: string | null) {
   const normalized = (error || "").toLowerCase();
@@ -4180,10 +4169,7 @@ export async function generateImage(
       )
     );
   }
-  if (
-    isResponsesBackend(config) &&
-    !shouldCodexUseDirectImagesEndpoint(config)
-  ) {
+  if (isResponsesBackend(config)) {
     try {
       return requireImageOutput(
         applyPromptOptimizationResultVisibility(
@@ -4223,11 +4209,9 @@ export async function generateImage(
     const size = params.size || DEFAULT_IMAGE_SIZE;
     const dimensions = parseImageSize(size);
     const background = normalizeImageBackground(params.background);
-    // codex 直连 OpenAI 标准 images 接口:拒绝非标准的 width/height(返回 400 Unknown
-    // parameter: 'width')与 gpt-image 不支持的 response_format,故对 codex 去掉这些字段
-    // (b64 为默认返回)。中转(pool-api)后端不受影响,原样发送。
-    // size 仍照发,但 codex 上游不尊重(#19175,直连端点亦然,见 shouldCodexUseDirectImagesEndpoint)。
-    const isCodexDirect = shouldCodexUseDirectImagesEndpoint(config);
+    // 此处仅 pool-api 等非 codex 后端走直连 images 端点:标准字段原样发送
+    // (codex 已改走 /responses,不存在 "去 width/height/response_format" 的分支)。
+    // size 仍照发;上游不尊重时按提示词自挑长宽比。
     const response = await fetchChatGptUpstream(
       config,
       `${config.baseUrl}/images/generations`,
@@ -4245,7 +4229,7 @@ export async function generateImage(
           prompt: appendImagesUpstreamNonce(prompt),
           n: params.n || 1,
           size,
-          ...(dimensions && !isCodexDirect
+          ...(dimensions
             ? { width: dimensions.width, height: dimensions.height }
             : {}),
           ...(normalizeQuality(params.quality)
@@ -4266,7 +4250,7 @@ export async function generateImage(
             : {}),
           ...(background ? { background } : {}),
           ...(config.useStream ? { stream: true, partial_images: 2 } : {}),
-          ...(isCodexDirect ? {} : { response_format: "b64_json" }),
+          response_format: "b64_json",
         }),
       }
     );
@@ -4366,82 +4350,9 @@ export async function editImage(
       )
     );
   }
-  // codex(pool-account responses)图生图:直连 JSON /images/edits(照 CPA codex 直连格式)。
-  // 输入图/mask 用 images[].image_url / mask.image_url 的 base64 data URL,size 走顶层。
-  // 注意 size 仍不被尊重:codex 上游忽略它(#19175,直连端点亦然),实测改图同样高比例返回
-  // 非请求尺寸,详见 shouldCodexUseDirectImagesEndpoint。codex /images/edits 不接受 multipart
-  // (400 Unsupported content type),也不认非标准 width/height 与 response_format
-  // (b64_json 为默认返回),故均不发送。
-  if (shouldCodexUseDirectImagesEndpoint(config)) {
-    try {
-      const size = params.size || DEFAULT_IMAGE_SIZE;
-      const background = normalizeImageBackground(params.background);
-      const toImageUrl = (file: { data: Buffer; type: string }) =>
-        `data:${file.type || "image/png"};base64,${Buffer.from(
-          file.data
-        ).toString("base64")}`;
-      const response = await fetchChatGptUpstream(
-        config,
-        `${config.baseUrl}/images/edits`,
-        {
-          method: "POST",
-          redirect: "manual",
-          signal: params.signal,
-          headers: getHeaders(config, { "Content-Type": "application/json" }),
-          body: JSON.stringify({
-            model,
-            // 同生图：注入每请求唯一零宽 nonce 破上游内容缓存（仅上游请求体）。
-            prompt: appendImagesUpstreamNonce(effectiveEditPrompt),
-            n: params.n || 1,
-            size,
-            images: params.images.map((image) => ({
-              image_url: toImageUrl(image),
-            })),
-            ...(params.mask
-              ? { mask: { image_url: toImageUrl(params.mask) } }
-              : {}),
-            ...(normalizeQuality(params.quality)
-              ? { quality: normalizeQuality(params.quality) }
-              : {}),
-            ...(normalizeModeration(params.moderation)
-              ? { moderation: normalizeModeration(params.moderation) }
-              : {}),
-            ...(normalizeOutputFormat(params.outputFormat)
-              ? { output_format: normalizeOutputFormat(params.outputFormat) }
-              : {}),
-            ...(normalizeOutputCompression(params.outputCompression) !==
-            undefined
-              ? {
-                  output_compression: normalizeOutputCompression(
-                    params.outputCompression
-                  ),
-                }
-              : {}),
-            ...(background ? { background } : {}),
-            ...(config.useStream ? { stream: true, partial_images: 2 } : {}),
-          }),
-        }
-      );
-      return requireImageOutput(
-        applyPromptOptimizationResultVisibility(
-          await parseImageResponse(response, callbacks)
-        )
-      );
-    } catch (error) {
-      logImageRequestError(error, {
-        operation: "edit",
-        baseUrl: config.baseUrl,
-        path: "/images/edits",
-        model,
-        useStream: config.useStream,
-      });
-      return {
-        error:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      };
-    }
-  }
-  // pool-api 的 responses 后端走 /responses;codex 图生图已在上面走直连 JSON /images/edits。
+  // codex 与 pool-api 的 responses 后端图生图统一走 /responses(同一 image_generation 工具);
+  // 直连 JSON /images/edits(CPA codex 格式)已废弃——2026-08 实测其对 codex OAuth token
+  // 返回 403 {"detail":"Forbidden"},详见上方 shouldCodexUseDirectImagesEndpoint 段注释。
   if (isResponsesBackend(config)) {
     try {
       const gptModel =

@@ -57,11 +57,20 @@ describe("image service Web-first fallback", () => {
       process.env.DATABASE_URL || "postgresql://test:test@127.0.0.1:5432/test";
     const { generateImage } = await import("./service");
     const imageBase64 = Buffer.from("codex-fallback-image").toString("base64");
-    // codex(responses 账号)的普通生成现在直连 /images/generations(size 走顶层),
-    // 不再走 /responses 工具路径;mock 返回标准 images JSON。
+    // codex(responses 账号)的普通生成走 /responses 的 image_generation 工具路径;
+    // mock 返回标准 responses JSON(与 chat/agent 共用同一解析)。
     const fetchMock = vi.fn(async () => {
       return new Response(
-        JSON.stringify({ data: [{ b64_json: imageBase64 }] }),
+        JSON.stringify({
+          id: "resp_fallback",
+          output: [
+            {
+              type: "image_generation_call",
+              status: "completed",
+              result: imageBase64,
+            },
+          ],
+        }),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -132,9 +141,9 @@ describe("image service Web-first fallback", () => {
         accountBackendPreferenceMode: "mixed-only",
       })
     );
-    // 回退到的 codex 账号在普通生成下命中直连 images 端点,而非 /responses。
+    // 回退到的 codex 账号在普通生成下走 /responses 工具路径。
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.test/v1/images/generations",
+      "https://api.example.test/v1/responses",
       expect.anything()
     );
   });
@@ -192,14 +201,26 @@ describe("image service Web-first fallback", () => {
     const imageBase64 = Buffer.from("second-member-image").toString("base64");
     const fetchMock = vi.fn(async () => {
       if (fetchMock.mock.calls.length === 1) {
-        // 首个 codex 成员的 /images/generations 返回无图,触发切换到下一个成员。
-        return new Response(JSON.stringify({ data: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+        // 首个 codex 成员的 /responses 返回空 output,触发切换到下一个成员。
+        return new Response(
+          JSON.stringify({ id: "resp_empty", output: [] }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
       return new Response(
-        JSON.stringify({ data: [{ b64_json: imageBase64 }] }),
+        JSON.stringify({
+          id: "resp_second",
+          output: [
+            {
+              type: "image_generation_call",
+              status: "completed",
+              result: imageBase64,
+            },
+          ],
+        }),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -282,10 +303,13 @@ describe("image service Web-first fallback", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ data: [] }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
+          new Response(
+            JSON.stringify({ id: "resp_empty", output: [] }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          )
       )
     );
 

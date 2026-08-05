@@ -1992,7 +1992,7 @@ async function fetchViaProxyDownload(
  * 通用走代理的上游请求：当目标主机是 chatgpt.com 且已配置 CHATGPT_WEB_PROXY_URL 时，
  * 经 sidecar /request 转发（TLS 伪装 + mihomo 上游出口），否则原样直连。
  *
- * 适用：codex/responses 账号的 /responses、/images/generations、/images/edits 等上游请求
+ * 适用：codex/responses 账号的 /responses（以及 pool-api 等后端的目标为 chatgpt.com 时）
  * 在部署机房与 chatgpt.com 直连被墙时，改走 sidecar 出网；未配代理或目标非 chatgpt.com
  * （如外接 pool-api 中转）时行为与裸 fetch 一致。
  */

@@ -1898,19 +1898,99 @@ async function downloadImage(
   url: string,
   signal?: AbortSignal
 ) {
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "User-Agent": USER_AGENT,
-    },
-  });
+  // 外部签名 URL（files.oaiusercontent.com 等 OpenAI 图片 CDN）在国内机房常被墙。
+  // 这里复用 Go 代理（sidecar）的同源/白名单透传能力转发下载：sidecar 以
+  // targetUrl 命中 allowlist 后从 mihomo/WARP 出口拉取字节，绕开 Web 主进程直连被墙。
+  const external = isExternalOpenAiCdn(url);
+  const proxy = external ? await getWebProxyConfig() : null;
+  const response =
+    proxy && external
+      ? await fetchViaProxyDownload(proxy, config, url, signal)
+      : await fetch(url, {
+          signal,
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            "User-Agent": USER_AGENT,
+          },
+        });
   if (!response.ok) {
     throw new Error(
       `ChatGPT Web image download failed: HTTP ${response.status}`
     );
   }
   return Buffer.from(await response.arrayBuffer()).toString("base64");
+}
+
+/** 是否为 ChatGPT Web 生图产物所在的 OpenAI 图片 CDN 主机。 */
+function isExternalOpenAiCdn(url: string) {
+  try {
+    const { host } = new URL(url);
+    return (
+      host === "files.oaiusercontent.com" ||
+      host.endsWith(".oaiusercontent.com") ||
+      host === "oaiusercontent.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** 经 sidecar 以 targetUrl（绝对 URL、allowlist 校验后）转发下载一次并返回 Response。 */
+async function fetchViaProxyDownload(
+  proxy: NonNullable<Awaited<ReturnType<typeof getWebProxyConfig>>>,
+  config: ApiConfig,
+  targetUrl: string,
+  signal?: AbortSignal
+) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(),
+    WEB_PROXY_REQUEST_TIMEOUT_MS
+  );
+  try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${config.apiKey}`,
+      "User-Agent": USER_AGENT,
+    };
+    const response = await fetch(`${proxy.url}/request`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(proxy.secret ? { "X-Proxy-Secret": proxy.secret } : {}),
+      },
+      body: JSON.stringify({
+        sessionKey: getWebSessionKey(config),
+        method: "GET",
+        urlPath: "",
+        targetPath: "",
+        targetUrl,
+        headers,
+        headerOrder: Object.keys(headers),
+        bodyBase64: "",
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(
+        `ChatGPT Web image proxy failed: HTTP ${response.status}${
+          text ? ` ${text.slice(0, 300)}` : ""
+        }`
+      );
+    }
+    const payload = (await response.json()) as WebProxyResponsePayload;
+    return new Response(decodeBody(payload.bodyBase64), {
+      status: payload.status,
+      headers: toResponseHeaders(payload.headers),
+    });
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 async function downloadImageOutputs(
@@ -2811,7 +2891,8 @@ async function resolveEditableDownloadUrl(
  * 拉取已解析出的下载 URL。按 URL 形态选路:
  * - chatgpt.com/openai.com 后端 URL 或相对路径:走 Go 代理(WARP 出网 + cookie),
  *   否则用机房 IP 直连会被 Cloudflare 拦(与生图同源问题)。
- * - 外部签名 URL(oaiusercontent 等):直连 + Authorization/UA(与 downloadImage 一致)。
+ * - 外部签名 URL(oaiusercontent 等):走 Go 代理 allowlist 透传;代理未配置时回退
+ *   直连 + Authorization/UA(与 downloadImage 一致)。
  */
 async function fetchResolvedDownload(
   config: ApiConfig,
@@ -2835,6 +2916,12 @@ async function fetchResolvedDownload(
         Accept: "application/octet-stream",
       }),
     });
+  }
+  // 外部签名 URL（oaiusercontent 等 OpenAI 图片/文件 CDN）：机房直连常被墙，
+  // 统一复用 Go 代理（sidecar）的 allowlist 透传下载，与 downloadImage 走同一出口。
+  const proxy = await getWebProxyConfig();
+  if (proxy && abs && isExternalOpenAiCdn(url)) {
+    return fetchViaProxyDownload(proxy, config, url, config.signal);
   }
   return fetch(url, {
     signal: config.signal,

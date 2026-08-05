@@ -69,6 +69,11 @@ services:
         condition: service_started
       super-resolution-worker:
         condition: service_healthy
+    # web 需访问 sub2api 的 PostgreSQL 做生图后端池同步(sub2ApiSourceGroups 等),
+    # 故额外接入 sub2api 部署的外部网络;host 用容器名 sub2api-postgres 避免歧义。
+    networks:
+      - default
+      - sub2api-net
 
   super-resolution-worker:
     image: ghcr.io/andlu155/gpt2image-pro-web:${GPT2IMAGE_IMAGE_TAG:-latest}
@@ -123,3 +128,11 @@ volumes:
   postgres-data:
   app-storage:
   app-bootstrap:
+
+networks:
+  default:
+    name: gpt2image-pro_default
+  # 外部 sub2api 部署网络(compose 项目 sub2api-deploy),web 仅读其 PostgreSQL
+  sub2api-net:
+    external: true
+    name: sub2api-deploy_sub2api-network

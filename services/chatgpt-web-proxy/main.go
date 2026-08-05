@@ -432,6 +432,10 @@ func isAllowlistedHost(host string) bool {
 			return true
 		}
 	}
+	// OpenAI 图片 CDN（ChatGPT Web 生图产物直链，需经代理出网下载，避免机房 IP 被墙）。
+	if host == "files.oaiusercontent.com" || host == "oaiusercontent.com" {
+		return true
+	}
 	return false
 }
 

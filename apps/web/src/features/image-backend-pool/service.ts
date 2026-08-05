@@ -1253,62 +1253,27 @@ function isRecoverableBackendError(error?: string | null) {
     isChatGptWebTemporalBackendError(error) ||
     isToolRateLimitBackendError(error) ||
     normalized.includes("429") ||
-    normalized.includes("529") ||
     normalized.includes("rate limit") ||
     normalized.includes("too many requests") ||
-    normalized.includes("usage limit") ||
-    normalized.includes("usage_limit") ||
-    normalized.includes("limit has been reached") ||
-    normalized.includes("limit_reached") ||
+    // 额度用尽类关键词复用 isUsageLimitBackendError，避免与 classifyFailure 各自维护一份。
+    isUsageLimitBackendError(error) ||
     normalized.includes("rate_limit_exceeded") ||
-    normalized.includes("no available image quota") ||
-    normalized.includes("quota exhausted") ||
-    normalized.includes("quota_exhausted") ||
-    normalized.includes("daily quota exceeded") ||
-    normalized.includes("account quota exceeded") ||
-    normalized.includes("quota has been exceeded") ||
-    normalized.includes("quota exceeded") ||
-    normalized.includes("quota_exceeded") ||
-    normalized.includes("insufficient_quota") ||
-    normalized.includes("insufficient credit") ||
-    normalized.includes("insufficient credits") ||
-    normalized.includes("not enough credit") ||
-    normalized.includes("not enough credits") ||
-    normalized.includes("credit exhausted") ||
-    normalized.includes("credits exhausted") ||
-    normalized.includes("resource has been exhausted") ||
-    normalized.includes("minimumcreditamountforusage") ||
-    normalized.includes("minimum credit amount for usage") ||
-    normalized.includes("minimum credit") ||
-    normalized.includes("billing_hard_limit") ||
     normalized.includes("timeout") ||
     normalized.includes("timed out") ||
     normalized.includes("econnreset") ||
     normalized.includes("fetch failed") ||
-    normalized.includes("empty non-json") ||
-    normalized.includes("empty response") ||
     normalized.includes("non-json responses api response") ||
     normalized.includes("non-json images api response") ||
     normalized.includes("upstream returned no image output") ||
     normalized.includes("returned no image output") ||
     normalized.includes("returned input image as output") ||
     normalized.includes("api returned no image data") ||
-    normalized.includes("http 500") ||
-    normalized.includes("status_code=500") ||
-    normalized.includes("status code 500") ||
-    normalized.includes('"status":500') ||
-    normalized.includes("internal server error") ||
-    normalized.includes("server_error") ||
-    normalized.includes("something seems to have gone wrong") ||
-    normalized.includes("an error occurred while processing your request") ||
+    // 5xx/过载/容量类关键词复用 isOverloadBackendError（含 529/empty response/capacity 等）。
+    isOverloadBackendError(error) ||
+    // 502/503/504 未纳入 isOverloadBackendError，单独保留。
     normalized.includes("502") ||
     normalized.includes("503") ||
     normalized.includes("504") ||
-    normalized.includes("server overloaded") ||
-    normalized.includes("overloaded") ||
-    normalized.includes("temporarily unavailable") ||
-    normalized.includes("temporary unavailable") ||
-    normalized.includes("service unavailable") ||
     // 我方算 token 下载图片因 429/限流/超时/5xx 失败属瞬时，可切后端重试。
     (isTokenCountDownloadFailure(normalized) &&
       isTransientFileDownloadFailure(normalized))
@@ -1389,6 +1354,35 @@ export function isMissingImageToolBackendError(error?: string | null) {
     normalized.includes("doesn't have") ||
     normalized.includes("no image_generation") ||
     normalized.includes("unavailable")
+  );
+}
+
+/**
+ * 识别"上游把 image_generation 工具调用以文本形式回显、并未真正产出图片"的确定性坏号错误。
+ *
+ * WHY 单列：部分 responses/codex 账号不真出图，而是把工具调用写回成
+ * `<image_generation.generate_image ...>已生成图片：...` 这类文本（模仿成功样貌）。
+ * 原先它命中 isRecoverableBackendError 的 "no image output" → classifyFailure 只返回
+ * active+冷却，坏账号短暂休息后继续留在轮换里反复被选。但它确定性不能出图，应像
+ * "缺 image 工具"一样标 error 踢出轮换，由测活/重新启用复活。
+ *
+ * 判定要求同时命中"工具调用文本回显"（尖括号工具标签/工具名直书）与"无图输出"语境，
+ * 避免误伤真正的成功出图或纯文本拒绝。
+ *
+ * @param error 上游或本站包装后的错误文本。
+ * @returns 是否为"工具调用被文本回显、未真正出图"类确定性坏号。
+ */
+export function isToolEchoNoImageBackendError(error?: string | null) {
+  const normalized = (error || "").toLowerCase();
+  const echoedToolCall =
+    normalized.includes("<image_generation") ||
+    normalized.includes("image_generation.generate_image") ||
+    normalized.includes("image_generation text2im");
+  if (!echoedToolCall) return false;
+  return (
+    normalized.includes("no image output") ||
+    normalized.includes("returned no image") ||
+    normalized.includes("已生成图片")
   );
 }
 
@@ -1852,6 +1846,12 @@ export async function classifyFailure(
   // 后端缺少出图能力（只回文字/无 image_generation 工具）：标记 error 踢出轮换，
   // 与 isImageBackendSwitchableError 配合实现"本次切换到别的后端 + 后续不再选它"。
   if (isMissingImageToolBackendError(error)) {
+    return { status: "error", cooldownUntil: null };
+  }
+  // 上游把 image_generation 工具调用文本回显、未真正出图（如 responses 坏号回
+  // `<image_generation.generate_image ...>已生成图片：`）：同样是确定性"不能出图"，
+  // 标 error 踢出轮换，避免它反复被生图请求选中。
+  if (isToolEchoNoImageBackendError(error)) {
     return { status: "error", cooldownUntil: null };
   }
   // 中转坏掉（无 token / 返回 HTML）：确定性不可用，按用户判定升级为 error 踢出。

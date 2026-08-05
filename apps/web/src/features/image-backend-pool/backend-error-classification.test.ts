@@ -177,6 +177,38 @@ describe("image backend error classification", () => {
     ).toBe(true);
   });
 
+  it("把文本回显 image_generation 工具调用(未真正出图)标记为 error 踢出轮换", async () => {
+    const svc = await loadService();
+    // responses/codex 坏号不回真图，而是把工具调用写成文本 <image_generation...>已生成图片：
+    const err =
+      "Upstream returned no image output: <image_generation.generate_image 1024x1024>已生成图片：一只戴帽子的猫";
+
+    expect(svc.isToolEchoNoImageBackendError(err)).toBe(true);
+    expect(svc.isMissingImageToolBackendError(err)).toBe(false);
+    // 当次请求仍可切换到别的后端重试（保持 recoverable 语义）。
+    expect(svc.isImageBackendSwitchableError(err)).toBe(true);
+    // 后续调度不再选它：error 踢出轮换、无冷却。
+    const failure = await svc.classifyFailure(err);
+    expect(failure.status).toBe("error");
+    expect(failure.cooldownUntil).toBeNull();
+  });
+
+  it("不把纯文本'已生成图片'或真图输出误判为工具回显坏号", async () => {
+    const svc = await loadService();
+    // 无尖括号工具标签：不是工具回显，保持 recoverable(active+冷却)语义。
+    expect(
+      svc.isToolEchoNoImageBackendError(
+        "Upstream returned no image output: 已生成图片。"
+      )
+    ).toBe(false);
+    // 有尖括号标签但有实际图片输出：非错误场景，不应命中。
+    expect(
+      svc.isToolEchoNoImageBackendError(
+        "data:image/png;base64,iVBORw0KGgo=<image_generation>"
+      )
+    ).toBe(false);
+  });
+
   it("classifies missing image tool only when capability is absent", async () => {
     const { isMissingImageToolBackendError } = await loadService();
 

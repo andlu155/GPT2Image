@@ -1351,22 +1351,35 @@ export async function runImageGenerationForUser(
               ) {
                 throw error;
               }
-              effectiveConfig = await getEffectiveConfig(userConfig, {
-                userId: input.userId,
-                apiKeyId: input.apiKeyId,
-                requestKind: backendRequestKind,
-                requestedModel: input.model,
-                preferredMemberId: input.preferredBackendMemberId,
-                preferredMemberType: input.preferredBackendMemberType,
-                stickyPreviousResponseId: input.stickyPreviousResponseId,
-                stickySessionKey: input.stickySessionKey,
-                accountBackendPreference: "responses",
-                accountBackendPreferenceMode: forceWebBackend
-                  ? "mixed-only"
-                  : undefined,
-                forceFirefly: input.forceFirefly,
-                ignoreUserConfig: requiresResponsesBackend,
-              });
+              try {
+                effectiveConfig = await getEffectiveConfig(userConfig, {
+                  userId: input.userId,
+                  apiKeyId: input.apiKeyId,
+                  requestKind: backendRequestKind,
+                  requestedModel: input.model,
+                  preferredMemberId: input.preferredBackendMemberId,
+                  preferredMemberType: input.preferredBackendMemberType,
+                  stickyPreviousResponseId: input.stickyPreviousResponseId,
+                  stickySessionKey: input.stickySessionKey,
+                  accountBackendPreference: "responses",
+                  accountBackendPreferenceMode: forceWebBackend
+                    ? "mixed-only"
+                    : undefined,
+                  forceFirefly: input.forceFirefly,
+                  ignoreUserConfig: requiresResponsesBackend,
+                });
+              } catch (fallbackError) {
+                // Web 与 Codex 账号都不可用：给可定位的明确文案，而不是透传晦涩的
+                // "no image output"-类底层错误。
+                if (
+                  fallbackError instanceof ImageBackendPoolUnavailableError
+                ) {
+                  throw new ImageBackendPoolUnavailableError(
+                    "Web 账号不可用，回退 Codex 也没有可用账号，请检查后端池账号状态"
+                  );
+                }
+                throw fallbackError;
+              }
             }
           } catch (error) {
             return {

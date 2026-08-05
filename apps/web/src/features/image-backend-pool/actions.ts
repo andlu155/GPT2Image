@@ -6,6 +6,7 @@ import {
 } from "@repo/shared/config/subscription-plan";
 
 import {
+  ActionUserError,
   adminAction,
   imageBackendPoolViewerAction,
   protectedAction,
@@ -910,8 +911,18 @@ export const refreshImageBackendAccountInfoAction =
   withImageBackendPoolAdminAction("refreshAccountInfo")
     .schema(z.object({ id: z.string().trim().min(1) }))
     .action(async ({ parsedInput }) => {
-      const info = await refreshImageBackendAccountInfo(parsedInput.id);
-      return { success: true, info };
+      try {
+        const info = await refreshImageBackendAccountInfo(parsedInput.id);
+        return { success: true, info };
+      } catch (error) {
+        // 账号不存在/非 Web 账号/上游 401(access token 失效)等都是管理员可预期失败，
+        // 原有 message 已足够定位；若不加 ActionUserError，生产环境会被 safe-action
+        // 统一替换成"服务器错误，请稍后重试"，管理员无法得知 token 需要轮换。
+        if (error instanceof Error) {
+          throw new ActionUserError(error.message);
+        }
+        throw error;
+      }
     });
 
 export const refreshImageBackendAccountsInfoAction =

@@ -956,12 +956,7 @@ async function startImageGeneration(
     body: JSON.stringify({
       action: "next",
       messages: [
-        buildMessage(
-          prompt,
-          references,
-          options.requestMessageId,
-          systemHints
-        ),
+        buildMessage(prompt, references, options.requestMessageId, systemHints),
       ],
       ...(options.continuation?.useNativeContinuation
         ? { conversation_id: options.continuation.conversationId }
@@ -1993,6 +1988,119 @@ async function fetchViaProxyDownload(
   }
 }
 
+/**
+ * 通用走代理的上游请求：当目标主机是 chatgpt.com 且已配置 CHATGPT_WEB_PROXY_URL 时，
+ * 经 sidecar /request 转发（TLS 伪装 + mihomo 上游出口），否则原样直连。
+ *
+ * 适用：codex/responses 账号的 /responses、/images/generations、/images/edits 等上游请求
+ * 在部署机房与 chatgpt.com 直连被墙时，改走 sidecar 出网；未配代理或目标非 chatgpt.com
+ * （如外接 pool-api 中转）时行为与裸 fetch 一致。
+ */
+async function fetchViaWebProxy(
+  proxyUrl: string,
+  secret: string,
+  sessionKey: string,
+  targetUrl: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: BodyInit | null,
+  signal?: AbortSignal
+): Promise<Response> {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(),
+    WEB_PROXY_REQUEST_TIMEOUT_MS
+  );
+  try {
+    const response = await fetch(`${proxyUrl}/request`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(secret ? { "X-Proxy-Secret": secret } : {}),
+      },
+      body: JSON.stringify({
+        sessionKey,
+        method,
+        urlPath: "",
+        targetPath: "",
+        targetUrl,
+        headers,
+        headerOrder: Object.keys(headers),
+        bodyBase64: encodeBody(body) ?? "",
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(
+        `ChatGPT Web proxy failed: HTTP ${response.status}${text ? ` ${text.slice(0, 300)}` : ""}`
+      );
+    }
+    const payload = (await response.json()) as WebProxyResponsePayload;
+    return new Response(decodeBody(payload.bodyBase64), {
+      status: payload.status,
+      headers: toResponseHeaders(payload.headers),
+    });
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+/**
+ * 决定上游请求是否走 sidecar 代理。codex/responses 与 web 后端共同指向 chatgpt.com，
+ * 在机房直连被墙时统一经代理出网；池内 pool-api（非 chatgpt.com baseUrl）保持直连。
+ */
+function isChatGptBackendHost(baseUrl: string | null | undefined): boolean {
+  let host = "";
+  try {
+    host = baseUrl ? new URL(baseUrl).hostname.toLowerCase() : "";
+  } catch {
+    return false;
+  }
+  return host === "chatgpt.com" || host.endsWith(".chatgpt.com");
+}
+
+/**
+ * codex/responses 与 web 后端共享的上游请求入口：目标主机为 chatgpt.com 且已配置
+ * CHATGPT_WEB_PROXY_URL 时经 sidecar /request 转发，否则原样直连。
+ * service.ts 的 /responses、/images/generations、/images/edits 直连调用统一改用它，
+ * 让机房直连被墙时同走 sidecar 出口（TLS 伪装 + mihomo 上游）。
+ */
+export async function fetchChatGptUpstream(
+  config: ApiConfig,
+  targetUrl: string,
+  init?: RequestInit,
+  extraHeaders?: Record<string, string>
+): Promise<Response> {
+  if (!isChatGptBackendHost(targetUrl)) {
+    return fetch(targetUrl, init);
+  }
+  const proxy = await getWebProxyConfig();
+  // multipart 等编码与代理 base64 协议不兼容，保持直连（非 chatgpt.com 主机也不会到这里）。
+  if (!proxy || init?.body instanceof FormData) {
+    return fetch(targetUrl, init);
+  }
+  const headers = {
+    ...headersToObject(init?.headers),
+    ...(extraHeaders || {}),
+  };
+  return fetchViaWebProxy(
+    proxy.url,
+    proxy.secret,
+    getWebSessionKey(config),
+    targetUrl,
+    init?.method || "GET",
+    headers,
+    init?.body,
+    init?.signal ?? undefined
+  );
+}
+
 async function downloadImageOutputs(
   config: ApiConfig,
   images: Array<{
@@ -2154,12 +2262,9 @@ async function runWebImage(
       )),
       ...(await Promise.all(
         historyImages.map((image, index) =>
-          uploadAttachment(
-            configWithSignal,
-            image,
-            images.length + index + 1,
-            { image: true }
-          )
+          uploadAttachment(configWithSignal, image, images.length + index + 1, {
+            image: true,
+          })
         )
       )),
       ...(await Promise.all(
@@ -2350,7 +2455,11 @@ async function pollWebChatResult(
   conversationId: string,
   requestMessageId: string,
   signal?: AbortSignal
-): Promise<{ responseText: string; hasImage: boolean; parentMessageId: string }> {
+): Promise<{
+  responseText: string;
+  hasImage: boolean;
+  parentMessageId: string;
+}> {
   const deadline = Date.now() + WEB_CHAT_POLL_TIMEOUT_MS;
   let bestText = "";
   let hasImage = false;
@@ -2455,12 +2564,9 @@ async function runWebChat(
       )),
       ...(await Promise.all(
         historyImages.map((image, index) =>
-          uploadAttachment(
-            configWithSignal,
-            image,
-            images.length + index + 1,
-            { image: true }
-          )
+          uploadAttachment(configWithSignal, image, images.length + index + 1, {
+            image: true,
+          })
         )
       )),
       ...(await Promise.all(
@@ -2574,8 +2680,7 @@ async function runWebChat(
       requestKind: config.backend?.requestKind,
     });
     return {
-      error:
-        error instanceof Error ? error.message : "ChatGPT Web chat failed",
+      error: error instanceof Error ? error.message : "ChatGPT Web chat failed",
     };
   } finally {
     clearTimeout(timeout);
@@ -2905,9 +3010,7 @@ async function fetchResolvedDownload(
     abs = null;
   }
   const isBackend =
-    !abs ||
-    abs.host.endsWith("chatgpt.com") ||
-    abs.host.endsWith("openai.com");
+    !abs || abs.host.endsWith("chatgpt.com") || abs.host.endsWith("openai.com");
   if (isBackend) {
     const path = abs ? `${abs.pathname}${abs.search}` : url;
     return fetchChatGptWeb(config, path, path, {
@@ -2941,12 +3044,14 @@ async function downloadEditableBinary(
   conversationId: string,
   artifact: EditableArtifact
 ): Promise<EditableFileBinary | null> {
-  const url = await resolveEditableDownloadUrl(config, conversationId, artifact);
+  const url = await resolveEditableDownloadUrl(
+    config,
+    conversationId,
+    artifact
+  );
   if (!url) return null;
   const response = await fetchResolvedDownload(config, url);
-  const buffer = response.ok
-    ? Buffer.from(await response.arrayBuffer())
-    : null;
+  const buffer = response.ok ? Buffer.from(await response.arrayBuffer()) : null;
   if (buffer && buffer.length > 0) {
     const mimeType =
       artifact.mimeType ||

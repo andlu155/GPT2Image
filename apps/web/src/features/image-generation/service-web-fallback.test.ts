@@ -41,6 +41,9 @@ vi.mock("@/features/image-backend-pool/service", () => backendPoolMock);
 vi.mock("./chatgpt-web", () => ({
   generateImageWithChatGptWeb: vi.fn(async () => ({ error: "terminated" })),
   editImageWithChatGptWeb: vi.fn(async () => ({ error: "terminated" })),
+  fetchChatGptUpstream: vi.fn(async (_config: unknown, url: string, init?: RequestInit) =>
+    fetch(url, init)
+  ),
 }));
 
 describe("image service Web-first fallback", () => {

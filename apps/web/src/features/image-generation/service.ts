@@ -55,6 +55,7 @@ import {
 import {
   chatWithChatGptWeb,
   editImageWithChatGptWeb,
+  fetchChatGptUpstream,
   generateImageWithChatGptWeb,
 } from "./chatgpt-web";
 import {
@@ -813,7 +814,8 @@ async function postResponsesImageRequest(
   },
   callbacks?: ImageGenerationCallbacks
 ) {
-  const response = await fetch(
+  const response = await fetchChatGptUpstream(
+    config,
     `${stripTrailingSlash(config.baseUrl)}/responses`,
     {
       method: "POST",
@@ -1871,7 +1873,8 @@ async function generateChatImageWithChatCompletions(
     delete (body as Record<string, unknown>).requires_responses_backend;
 
     try {
-      const response = await fetch(
+      const response = await fetchChatGptUpstream(
+        config,
         `${stripTrailingSlash(config.baseUrl)}/chat/completions`,
         {
           method: "POST",
@@ -2126,7 +2129,8 @@ async function fetchResponses(
   },
   callbacks?: ImageGenerationCallbacks
 ): Promise<ResponsesResultWithOutput> {
-  const response = await fetch(
+  const response = await fetchChatGptUpstream(
+    config,
     `${stripTrailingSlash(config.baseUrl)}/responses`,
     {
       method: "POST",
@@ -4224,44 +4228,48 @@ export async function generateImage(
     // (b64 为默认返回)。中转(pool-api)后端不受影响,原样发送。
     // size 仍照发,但 codex 上游不尊重(#19175,直连端点亦然,见 shouldCodexUseDirectImagesEndpoint)。
     const isCodexDirect = shouldCodexUseDirectImagesEndpoint(config);
-    const response = await fetch(`${config.baseUrl}/images/generations`, {
-      method: "POST",
-      redirect: "manual",
-      signal: params.signal,
-      headers: getHeaders(config, {
-        "Content-Type": "application/json",
-      }),
-      body: JSON.stringify({
-        model,
-        // images 端点不吃 prompt_cache_key,改在 prompt 注入每请求唯一零宽 nonce,
-        // 打掉上游中转按请求体内容缓存导致的"同图同词出同图"。仅作用于上游请求体。
-        prompt: appendImagesUpstreamNonce(prompt),
-        n: params.n || 1,
-        size,
-        ...(dimensions && !isCodexDirect
-          ? { width: dimensions.width, height: dimensions.height }
-          : {}),
-        ...(normalizeQuality(params.quality)
-          ? { quality: normalizeQuality(params.quality) }
-          : {}),
-        ...(normalizeModeration(params.moderation)
-          ? { moderation: normalizeModeration(params.moderation) }
-          : {}),
-        ...(normalizeOutputFormat(params.outputFormat)
-          ? { output_format: normalizeOutputFormat(params.outputFormat) }
-          : {}),
-        ...(normalizeOutputCompression(params.outputCompression) !== undefined
-          ? {
-              output_compression: normalizeOutputCompression(
-                params.outputCompression
-              ),
-            }
-          : {}),
-        ...(background ? { background } : {}),
-        ...(config.useStream ? { stream: true, partial_images: 2 } : {}),
-        ...(isCodexDirect ? {} : { response_format: "b64_json" }),
-      }),
-    });
+    const response = await fetchChatGptUpstream(
+      config,
+      `${config.baseUrl}/images/generations`,
+      {
+        method: "POST",
+        redirect: "manual",
+        signal: params.signal,
+        headers: getHeaders(config, {
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({
+          model,
+          // images 端点不吃 prompt_cache_key,改在 prompt 注入每请求唯一零宽 nonce,
+          // 打掉上游中转按请求体内容缓存导致的"同图同词出同图"。仅作用于上游请求体。
+          prompt: appendImagesUpstreamNonce(prompt),
+          n: params.n || 1,
+          size,
+          ...(dimensions && !isCodexDirect
+            ? { width: dimensions.width, height: dimensions.height }
+            : {}),
+          ...(normalizeQuality(params.quality)
+            ? { quality: normalizeQuality(params.quality) }
+            : {}),
+          ...(normalizeModeration(params.moderation)
+            ? { moderation: normalizeModeration(params.moderation) }
+            : {}),
+          ...(normalizeOutputFormat(params.outputFormat)
+            ? { output_format: normalizeOutputFormat(params.outputFormat) }
+            : {}),
+          ...(normalizeOutputCompression(params.outputCompression) !== undefined
+            ? {
+                output_compression: normalizeOutputCompression(
+                  params.outputCompression
+                ),
+              }
+            : {}),
+          ...(background ? { background } : {}),
+          ...(config.useStream ? { stream: true, partial_images: 2 } : {}),
+          ...(isCodexDirect ? {} : { response_format: "b64_json" }),
+        }),
+      }
+    );
 
     return requireImageOutput(
       applyPromptOptimizationResultVisibility(
@@ -4372,43 +4380,48 @@ export async function editImage(
         `data:${file.type || "image/png"};base64,${Buffer.from(
           file.data
         ).toString("base64")}`;
-      const response = await fetch(`${config.baseUrl}/images/edits`, {
-        method: "POST",
-        redirect: "manual",
-        signal: params.signal,
-        headers: getHeaders(config, { "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          model,
-          // 同生图：注入每请求唯一零宽 nonce 破上游内容缓存（仅上游请求体）。
-          prompt: appendImagesUpstreamNonce(effectiveEditPrompt),
-          n: params.n || 1,
-          size,
-          images: params.images.map((image) => ({
-            image_url: toImageUrl(image),
-          })),
-          ...(params.mask
-            ? { mask: { image_url: toImageUrl(params.mask) } }
-            : {}),
-          ...(normalizeQuality(params.quality)
-            ? { quality: normalizeQuality(params.quality) }
-            : {}),
-          ...(normalizeModeration(params.moderation)
-            ? { moderation: normalizeModeration(params.moderation) }
-            : {}),
-          ...(normalizeOutputFormat(params.outputFormat)
-            ? { output_format: normalizeOutputFormat(params.outputFormat) }
-            : {}),
-          ...(normalizeOutputCompression(params.outputCompression) !== undefined
-            ? {
-                output_compression: normalizeOutputCompression(
-                  params.outputCompression
-                ),
-              }
-            : {}),
-          ...(background ? { background } : {}),
-          ...(config.useStream ? { stream: true, partial_images: 2 } : {}),
-        }),
-      });
+      const response = await fetchChatGptUpstream(
+        config,
+        `${config.baseUrl}/images/edits`,
+        {
+          method: "POST",
+          redirect: "manual",
+          signal: params.signal,
+          headers: getHeaders(config, { "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            model,
+            // 同生图：注入每请求唯一零宽 nonce 破上游内容缓存（仅上游请求体）。
+            prompt: appendImagesUpstreamNonce(effectiveEditPrompt),
+            n: params.n || 1,
+            size,
+            images: params.images.map((image) => ({
+              image_url: toImageUrl(image),
+            })),
+            ...(params.mask
+              ? { mask: { image_url: toImageUrl(params.mask) } }
+              : {}),
+            ...(normalizeQuality(params.quality)
+              ? { quality: normalizeQuality(params.quality) }
+              : {}),
+            ...(normalizeModeration(params.moderation)
+              ? { moderation: normalizeModeration(params.moderation) }
+              : {}),
+            ...(normalizeOutputFormat(params.outputFormat)
+              ? { output_format: normalizeOutputFormat(params.outputFormat) }
+              : {}),
+            ...(normalizeOutputCompression(params.outputCompression) !==
+            undefined
+              ? {
+                  output_compression: normalizeOutputCompression(
+                    params.outputCompression
+                  ),
+                }
+              : {}),
+            ...(background ? { background } : {}),
+            ...(config.useStream ? { stream: true, partial_images: 2 } : {}),
+          }),
+        }
+      );
       return requireImageOutput(
         applyPromptOptimizationResultVisibility(
           await parseImageResponse(response, callbacks)
@@ -4511,13 +4524,17 @@ export async function editImage(
       );
     }
 
-    const response = await fetch(`${config.baseUrl}/images/edits`, {
-      method: "POST",
-      redirect: "manual",
-      signal: params.signal,
-      headers: getHeaders(config, {}),
-      body: formData,
-    });
+    const response = await fetchChatGptUpstream(
+      config,
+      `${config.baseUrl}/images/edits`,
+      {
+        method: "POST",
+        redirect: "manual",
+        signal: params.signal,
+        headers: getHeaders(config, {}),
+        body: formData,
+      }
+    );
 
     return requireImageOutput(
       applyPromptOptimizationResultVisibility(

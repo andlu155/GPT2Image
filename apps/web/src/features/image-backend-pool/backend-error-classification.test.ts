@@ -215,6 +215,23 @@ describe("image backend error classification", () => {
     }
   });
 
+  it("把 <tool_call name=\"image_generation\"> 伪XML/工具标签变体也标为 error 踢出轮换", async () => {
+    const svc = await loadService();
+    // 生产实测变体：Web 端坏号把工具调用以 <tool_call name="..."> 伪XML 形式回显，
+    // 工具名被引号包裹、前缀是 tool_call name=，旧逻辑只认 <image_generation / (image_generation
+    // / :image_generation / image_generation.generate|text2im，此变体全不命中 → 仅 active+冷却，
+    // 坏号冷却后回轮换反复被选。应与其它回显变体同语义：标 error 踢出。
+    const err =
+      'Upstream returned no image output: <tool_call name="image_generation"> <prompt>一张原创海报</prompt> <size>1024</size>';
+    expect(svc.isToolEchoNoImageBackendError(err)).toBe(true);
+    // 当次请求仍可切换（保持 recoverable 语义）。
+    expect(svc.isImageBackendSwitchableError(err)).toBe(true);
+    // 后续调度不再选它：error 踢出轮换、无冷却。
+    const failure = await svc.classifyFailure(err);
+    expect(failure.status).toBe("error");
+    expect(failure.cooldownUntil).toBeNull();
+  });
+
   it("不把纯文本'已生成图片'或真图输出误判为工具回显坏号", async () => {
     const svc = await loadService();
     // 无尖括号工具标签：不是工具回显，保持 recoverable(active+冷却)语义。

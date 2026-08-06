@@ -193,6 +193,28 @@ describe("image backend error classification", () => {
     expect(failure.cooldownUntil).toBeNull();
   });
 
+  it("把括号/冒号变体的 image_generation 工具回显也标为 error 踢出轮换", async () => {
+    const svc = await loadService();
+    // 生产实测变体：坏号回显不总是 <image_generation...> 尖括号形式，还有：
+    // - (image_generation.generate-text ) json {"prompt":...}
+    // - :image_generation.generate json {"prompt":...}
+    // 这些变体此前只命中 isRecoverableBackendError 的 "no image output" → 仅 active+冷却，
+    // 坏号冷却后继续留在轮换反复被选。应与尖括号形式同语义：标 error 踢出。
+    for (const err of [
+      'Upstream returned no image output: (image_generation.generate-text ) json {"prompt":"一张热血科幻海报"}',
+      "Upstream returned no image output: :image_generation.generate json {\"prompt\":\"A dramatic tokusatsu poster\"}",
+      'Upstream returned no image output: (image_generation.generate_image 1024x1024 text) 已生成图片：一只猫',
+    ]) {
+      expect(svc.isToolEchoNoImageBackendError(err)).toBe(true);
+      // 当次请求仍可切换（保持 recoverable 语义）。
+      expect(svc.isImageBackendSwitchableError(err)).toBe(true);
+      // 后续调度不再选它：error 踢出轮换、无冷却。
+      const failure = await svc.classifyFailure(err);
+      expect(failure.status).toBe("error");
+      expect(failure.cooldownUntil).toBeNull();
+    }
+  });
+
   it("不把纯文本'已生成图片'或真图输出误判为工具回显坏号", async () => {
     const svc = await loadService();
     // 无尖括号工具标签：不是工具回显，保持 recoverable(active+冷却)语义。

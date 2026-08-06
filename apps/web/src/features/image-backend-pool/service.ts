@@ -1374,10 +1374,15 @@ export function isMissingImageToolBackendError(error?: string | null) {
  */
 export function isToolEchoNoImageBackendError(error?: string | null) {
   const normalized = (error || "").toLowerCase();
+  // 上游把工具调用以文本回显时,标签不总是 <image_generation...> 尖括号形式:
+  // 生产实测还有 (image_generation.generate...) / :image_generation.generate 等
+  // 括号/冒号/变体后缀形式。统一按 "image_generation 工具标签出现在错误文本" 判定。
   const echoedToolCall =
     normalized.includes("<image_generation") ||
-    normalized.includes("image_generation.generate_image") ||
-    normalized.includes("image_generation text2im");
+    normalized.includes("(image_generation") ||
+    normalized.includes(":image_generation") ||
+    normalized.includes("image_generation.generate") ||
+    normalized.includes("image_generation.text2im");
   if (!echoedToolCall) return false;
   return (
     normalized.includes("no image output") ||
